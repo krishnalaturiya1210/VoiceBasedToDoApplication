@@ -7,7 +7,7 @@
   <!-- IMPORTANT for mobile scaling -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Voice-Based To-Do App</title>
+  <title>Voice - Based To-Do App</title>
 
   <!-- PWA manifest + theme color -->
   <link rel="manifest" href="/static/manifest.json">
@@ -32,13 +32,19 @@
     }
 
     h1 {
-      margin: 30px 0 10px;
-      font-weight: 600;
-      color: #111827;
-      letter-spacing: 0.3px;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #000000; /* pure black */
+      letter-spacing: 1.2px;
+      margin-top: 30px;
       text-align: center;
+
+      /* subtle white glow */
+      text-shadow:
+        0 0 4px rgba(255,255,255,0.6),
+        0 0 8px rgba(255,255,255,0.4);
     }
+
 
     #status {
       background: rgba(255,255,255,0.5);
@@ -429,7 +435,7 @@
 </head>
 <body>
   <div id="overlay">
-    <p>Tap anywhere to start Voice To-Do</p>
+    <p>Welcome to voice based to do application! Click to start!</p>
   </div>
 
   <h1>Voice-Based To-Do App</h1>

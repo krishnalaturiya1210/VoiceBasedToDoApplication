@@ -1,4 +1,4 @@
-// script3.js
+// script3.js 
 const statusText = document.getElementById("status");
 const taskList = document.getElementById("taskList");
 const muteBtn = document.getElementById("muteBtn");
@@ -16,6 +16,20 @@ let wakeRunning = false;
 let inCommandMode = false;
 let sortMode = "created";
 
+// 🔹 For Clear-All / Clear-Completed Confirmation Dialog + voice confirm
+let inConfirmDialog = false;
+let confirmRecognition = null;
+let confirmOverlay = null;
+let confirmBox = null;
+let confirmMessageEl = null;
+let confirmYesBtn = null;
+let confirmNoBtn = null;
+let confirmOnConfirm = null;
+let confirmOnCancel = null;
+
+/* -----------------------
+   LONG PRESS DELETE
+------------------------ */
 function attachLongPressDelete(element, taskId) {
   let pressTimer = null;
   let longPressTriggered = false;
@@ -53,7 +67,9 @@ function attachLongPressDelete(element, taskId) {
   element.addEventListener("mouseleave", cancel);
 }
 
-/* --- Audio cue --- */
+/* -----------------------
+   AUDIO + TTS
+------------------------ */
 function playDing() {
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -90,7 +106,256 @@ function showStatus(msg, color = "#333") {
   statusText.style.color = color;
 }
 
-/* --- Task List (card layout) --- */
+/* -----------------------
+   CONFIRMATION MODAL + VOICE
+------------------------ */
+
+// Create a simple overlay modal dynamically (so we don't have to touch HTML)
+function initConfirmDialog() {
+  if (confirmOverlay) return; // already initialized
+
+  confirmOverlay = document.createElement("div");
+  confirmOverlay.id = "confirmOverlay";
+  Object.assign(confirmOverlay.style, {
+    position: "fixed",
+    inset: "0",
+    background: "rgba(15, 23, 42, 0.55)",
+    display: "none",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: "9999",
+    padding: "16px"
+  });
+
+  confirmBox = document.createElement("div");
+  Object.assign(confirmBox.style, {
+    background: "#ffffff",
+    maxWidth: "420px",
+    width: "100%",
+    borderRadius: "16px",
+    padding: "18px 18px 14px",
+    boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+    textAlign: "center"
+  });
+
+  confirmMessageEl = document.createElement("p");
+  confirmMessageEl.style.margin = "0 0 14px 0";
+  confirmMessageEl.style.fontSize = "0.95rem";
+  confirmMessageEl.style.color = "#111827";
+
+  const hint = document.createElement("p");
+  hint.textContent = "You can tap Yes/No or say it.";
+  hint.style.margin = "0 0 14px 0";
+  hint.style.fontSize = "0.8rem";
+  hint.style.color = "#6b7280";
+
+  const btnRow = document.createElement("div");
+  btnRow.style.display = "flex";
+  btnRow.style.justifyContent = "center";
+  btnRow.style.gap = "12px";
+
+  confirmYesBtn = document.createElement("button");
+  confirmYesBtn.textContent = "Yes";
+  Object.assign(confirmYesBtn.style, {
+    padding: "8px 14px",
+    borderRadius: "999px",
+    border: "none",
+    background: "linear-gradient(90deg,#4CAF50,#16a34a)",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    fontWeight: "600"
+  });
+
+  confirmNoBtn = document.createElement("button");
+  confirmNoBtn.textContent = "No";
+  Object.assign(confirmNoBtn.style, {
+    padding: "8px 14px",
+    borderRadius: "999px",
+    border: "1px solid #d1d5db",
+    background: "#fff",
+    color: "#374151",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    fontWeight: "500"
+  });
+
+  btnRow.appendChild(confirmYesBtn);
+  btnRow.appendChild(confirmNoBtn);
+
+  confirmBox.appendChild(confirmMessageEl);
+  confirmBox.appendChild(hint);
+  confirmBox.appendChild(btnRow);
+  confirmOverlay.appendChild(confirmBox);
+  document.body.appendChild(confirmOverlay);
+
+  // Clicking outside box closes as "No"
+  confirmOverlay.addEventListener("click", (e) => {
+    if (e.target === confirmOverlay) {
+      handleConfirmCancel();
+    }
+  });
+
+  confirmYesBtn.addEventListener("click", () => {
+    handleConfirmYes();
+  });
+
+  confirmNoBtn.addEventListener("click", () => {
+    handleConfirmCancel();
+  });
+}
+
+function openConfirmDialog(message, onConfirm, onCancel, voicePrompt) {
+  initConfirmDialog();
+
+  inConfirmDialog = true;
+  confirmOnConfirm = onConfirm;
+  confirmOnCancel = onCancel || null;
+
+  confirmMessageEl.textContent = message;
+  confirmOverlay.style.display = "flex";
+
+  // stop other recognizers while in dialog
+  stopWakeRecognition();
+  try {
+    commandRecognition && commandRecognition.stop();
+  } catch {}
+
+  // speak the prompt
+  if (voicePrompt) {
+    speak(voicePrompt);
+  } else {
+    speak(message);
+  }
+
+  // Set up a temporary recognition session listening for "I confirm" / "yes" / "cancel"
+  if (SpeechRecognition) {
+    confirmRecognition = new SpeechRecognition();
+    confirmRecognition.lang = "en-US";
+    confirmRecognition.continuous = false;
+    confirmRecognition.interimResults = false;
+
+    confirmRecognition.onresult = (e) => {
+      const transcript = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
+      console.log("🎙️ Confirm dialog heard:", transcript);
+
+      if (
+        transcript.includes("confirm") ||
+        transcript === "yes" ||
+        transcript.includes("yeah") ||
+        transcript.includes("sure")
+      ) {
+        handleConfirmYes(true);
+      } else if (
+        transcript.includes("cancel") ||
+        transcript.includes("no") ||
+        transcript.includes("nope")
+      ) {
+        handleConfirmCancel(true);
+      } else {
+        speak("I didn't catch that. Can you repeat?");
+      }
+    };
+
+    confirmRecognition.onerror = (e) => {
+      console.warn("🎙️ Confirm recognizer error:", e.error);
+    };
+
+    confirmRecognition.onend = () => {
+      console.log("🎙️ Confirm recognizer ended.");
+
+      // 🔁 As long as the dialog is open, keep listening
+      if (inConfirmDialog) {
+        try {
+          confirmRecognition.start();
+        } catch (err) {
+          console.warn("Could not restart confirmRecognition:", err);
+        }
+      }
+    };
+
+    try {
+      confirmRecognition.start();
+    } catch (err) {
+      console.warn("Could not start confirmRecognition:", err);
+    }
+  }
+}
+
+function closeConfirmDialog() {
+  confirmOverlay && (confirmOverlay.style.display = "none");
+
+  if (confirmRecognition) {
+    try {
+      confirmRecognition.stop();
+    } catch {}
+    confirmRecognition = null;
+  }
+
+  inConfirmDialog = false;
+
+  // return to wake mode
+  if (listening) {
+    setTimeout(startWakeRecognition, 300);
+  }
+}
+
+function handleConfirmYes(fromVoice = false) {
+  console.log("✅ Confirm dialog accepted", fromVoice ? "(via voice)" : "(via click)");
+  closeConfirmDialog();
+  if (confirmOnConfirm) {
+    confirmOnConfirm();
+  }
+}
+
+function handleConfirmCancel(fromVoice = false) {
+  console.log("❌ Confirm dialog cancelled", fromVoice ? "(via voice)" : "(via click)");
+  closeConfirmDialog();
+  speak("Okay, I cancelled that action.");
+  if (confirmOnCancel) {
+    confirmOnCancel();
+  }
+}
+
+/**
+ * Public helper for Clear All:
+ *   askForClearAllConfirmation(() => sendCommandJson("/clear"));
+ */
+function askForClearAllConfirmation() {
+  openConfirmDialog(
+    "This will delete ALL tasks and cannot be undone. Are you sure?",
+    () => {
+      // onConfirm
+      sendCommandJson("/clear");
+    },
+    () => {
+      // onCancel (spoken in handleConfirmCancel)
+    },
+    "Warning. This will delete all of your tasks. Are you sure?"
+  );
+}
+
+/**
+ * Public helper for Clear Completed:
+ *   askForClearCompletedConfirmation(() => sendCommandJson("/clear-completed"));
+ */
+function askForClearCompletedConfirmation() {
+  openConfirmDialog(
+    "This will delete all completed tasks and cannot be undone. Are you sure?",
+    () => {
+      // onConfirm
+      sendCommandJson("/clear-completed");
+    },
+    () => {
+      // onCancel (spoken in handleConfirmCancel)
+    },
+    "You asked to clear all completed tasks. Are you sure?"
+  );
+}
+
+/* -----------------------
+   TASK RENDERING
+------------------------ */
 async function refreshTasks() {
   console.log("🎨 Refreshing tasks...");
   try {
@@ -155,7 +420,9 @@ async function refreshTasks() {
   }
 }
 
-/* --- API Helper --- */
+/* -----------------------
+   API HELPER
+------------------------ */
 async function sendCommandJson(path, payload = {}) {
   console.log(`➡️ Sending API command to ${path}`, payload);
   try {
@@ -184,7 +451,9 @@ async function sendCommandJson(path, payload = {}) {
   }
 }
 
-/* --- Voice Command Processing --- */
+/* -----------------------
+   VOICE COMMANDS
+------------------------ */
 async function processCommand(cmd) {
   console.log(`🧠 Processing command: "${cmd}"`);
   if (!cmd) return;
@@ -222,15 +491,17 @@ async function processCommand(cmd) {
     return;
   }
 
+  // 🔹 CLEAR COMPLETED with custom dialog + voice confirm
   if (lower.includes("clear completed") || lower.includes("remove completed")) {
-    console.log("-> Matched CLEAR COMPLETED");
-    sendCommandJson("/clear-completed");
+    console.log("-> Matched CLEAR COMPLETED (voice)");
+    askForClearCompletedConfirmation();
     return;
   }
 
+  // 🔹 CLEAR ALL with custom dialog + voice confirm
   if (lower.includes("clear all") || lower.includes("remove all")) {
-    console.log("-> Matched CLEAR ALL");
-    sendCommandJson("/clear");
+    console.log("-> Matched CLEAR ALL (voice)");
+    askForClearAllConfirmation();
     return;
   }
 
@@ -294,7 +565,9 @@ async function processCommand(cmd) {
   speak("Sorry, I didn't understand that.");
 }
 
-/* --- Task Listing Commands --- */
+/* -----------------------
+   LISTING HELPERS
+------------------------ */
 async function listAllTasks() {
   console.log("📋 Listing all tasks...");
   try {
@@ -355,6 +628,9 @@ async function listCompletedTasks() {
   }
 }
 
+/* -----------------------
+   TASK ACTIONS
+------------------------ */
 async function toggleTask(id) {
   console.log(`🖱️ UI: Toggle task ${id}`);
   await sendCommandJson("/toggle", { id });
@@ -365,7 +641,9 @@ async function deleteTask(id) {
   await sendCommandJson("/delete", { id });
 }
 
-/* --- Sorting Dropdown --- */
+/* -----------------------
+   SORT DROPDOWN
+------------------------ */
 function addSortDropdown() {
   console.log("⚙️ Initializing Sort Dropdown");
   const old = document.getElementById("sortWrapper");
@@ -420,7 +698,9 @@ function addSortDropdown() {
   controls.appendChild(wrapper);
 }
 
-/* --- Speech Recognition Setup --- */
+/* -----------------------
+   SPEECH RECOGNITION SETUP
+------------------------ */
 function initRecognizers() {
   console.log("⚙️ Initializing speech recognizers...");
   if (!SpeechRecognition) {
@@ -440,7 +720,7 @@ function initRecognizers() {
   wakeRecognition.onresult = (event) => {
     const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
     console.log(`🎙️ Wake heard: "${transcript}"`);
-    if ((transcript.includes("hey to do") || transcript.includes("hello to do")) && !inCommandMode) {
+    if ((transcript.includes("hey to do") || transcript.includes("hello to do")) && !inCommandMode && !inConfirmDialog) {
       console.log("✅ Wake word DETECTED. Activating command mode.");
       inCommandMode = true;
       stopWakeRecognition();
@@ -464,7 +744,9 @@ function initRecognizers() {
   wakeRecognition.onend = () => {
     console.log("🎙️ Wake recognizer stopped.");
     wakeRunning = false;
-    if (!inCommandMode && listening) setTimeout(startWakeRecognition, 500);
+    if (!inCommandMode && listening && !inConfirmDialog) {
+      setTimeout(startWakeRecognition, 500);
+    }
   };
 
   wakeRecognition.onerror = (e) => {
@@ -482,21 +764,29 @@ function initRecognizers() {
     console.log("🎙️ Command recognizer stopped. Returning to wake mode.");
     inCommandMode = false;
     showStatus("Say 'Hey To Do' to start again.", "green");
-    if (listening) setTimeout(startWakeRecognition, 500);
+    if (listening && !inConfirmDialog) {
+      setTimeout(startWakeRecognition, 500);
+    }
   };
 
   commandRecognition.onerror = (e) => {
     console.warn("🎙️ Command recognizer error:", e.error);
     inCommandMode = false;
-    startWakeRecognition();
+    if (!inConfirmDialog) {
+      startWakeRecognition();
+    }
   };
 }
 
 function startWakeRecognition() {
   if (!wakeRunning && listening && wakeRecognition) {
     console.log("🎙️ Starting wake recognizer...");
-    wakeRecognition.start();
-    wakeRunning = true;
+    try {
+      wakeRecognition.start();
+      wakeRunning = true;
+    } catch (err) {
+      console.warn("Could not start wakeRecognition:", err);
+    }
   }
 }
 
@@ -508,7 +798,9 @@ function stopWakeRecognition() {
   }
 }
 
-/* --- Manual Input --- */
+/* -----------------------
+   MANUAL INPUT
+------------------------ */
 manualForm.addEventListener("submit", ev => {
   ev.preventDefault();
   const v = manualInput.value.trim();
@@ -518,7 +810,9 @@ manualForm.addEventListener("submit", ev => {
   manualInput.value = "";
 });
 
-/* --- Mute Toggle --- */
+/* -----------------------
+   MUTE TOGGLE
+------------------------ */
 muteBtn.addEventListener("click", () => {
   listening = !listening;
   console.log(`🖱️ Mute button clicked. Listening set to: ${listening}`);
@@ -529,22 +823,24 @@ muteBtn.addEventListener("click", () => {
     showStatus("Say 'Hey To Do' to start.", "green");
   } else {
     stopWakeRecognition();
-    commandRecognition?.stop();
+    try {
+      commandRecognition && commandRecognition.stop();
+    } catch {}
     showStatus("Voice paused. Use manual input.", "gray");
   }
 });
 
-/* --- Clear All --- */
+/* -----------------------
+   CLEAR ALL (BUTTON) with dialog + voice confirmation
+------------------------ */
 clearBtn.addEventListener("click", async () => {
   console.log("🖱️ Clear All button clicked.");
-  if (!confirm("Clear all tasks?")) {
-    console.log("-> Clear all cancelled.");
-    return;
-  }
-  await sendCommandJson("/clear");
+  askForClearAllConfirmation();
 });
 
-/* --- Initialize App --- */
+/* -----------------------
+   INIT APP
+------------------------ */
 console.log("🚀 App starting...");
 addSortDropdown();
 initRecognizers();
@@ -552,7 +848,9 @@ startWakeRecognition();
 refreshTasks();
 showStatus("Say 'Hey To Do' to start.", "green");
 
-/* --- Overlay + Service Worker + Help modal on load --- */
+/* -----------------------
+   OVERLAY + SW + HELP MODAL
+------------------------ */
 window.addEventListener("load", () => {
   console.log("🎉 Page loaded.");
 
