@@ -1,52 +1,63 @@
 # task_parsing.py
+"""
+Utilities for parsing natural language "add task" commands into
+structured attributes: name, priority, category, and due date.
+
+The main entry point is parse_add_task_command(text: str) -> Dict[str, Any].
+"""
+
 import re
-from dateutil import parser as date_parser
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
-# 🔹 NEW: import joblib and try to load the ML models
+from dateutil import parser as date_parser
+
+# Optional: import joblib and try to load the ML models
 try:
     from joblib import load
 except ImportError:
-    load = None  # so the file still imports even if joblib isn't installed
+    # Keep a fallback so the file still imports even if joblib is not installed
+    load = None
 
+# Mapping from textual priority labels to numeric levels
 PRIORITY_MAP = {
     "low": 1,
     "medium": 2,
-    "high": 3
+    "high": 3,
 }
 
-# 🔹 NEW: global model handles (best-effort load; safe if missing)
+# Global model handles (best-effort load; safe if missing)
 PRIORITY_MODEL = None
 CATEGORY_MODEL = None
 
 if load is not None:
     try:
         PRIORITY_MODEL = load("priority_model.joblib")
-        print("✅ Loaded priority_model.joblib")
+        print("Loaded priority_model.joblib")
     except Exception:
         PRIORITY_MODEL = None
 
     try:
         CATEGORY_MODEL = load("category_model.joblib")
-        print("✅ Loaded category_model.joblib")
+        print("Loaded category_model.joblib")
     except Exception:
         CATEGORY_MODEL = None
 
 
 def parse_add_task_command(text: str) -> Dict[str, Any]:
     """
-    Given a raw command like:
-      "add submit HCI report with high priority by monday in school category"
-    return a dict with:
-      - name (cleaned task name)
-      - priority (1=low, 2=medium, 3=high)
-      - category (string, default 'general')
-      - due_date (datetime or None)
+    Parse a raw command such as:
+        "add submit HCI report with high priority by monday in school category"
+
+    Returns a dictionary with:
+        - name (cleaned task name)
+        - priority (1=low, 2=medium, 3=high)
+        - category (string, default 'general')
+        - due_date (datetime or None)
 
     Hybrid strategy:
-      1) Use regex rules to extract + clean.
-      2) If priority/category not found, fall back to small ML models.
+        1) Use rule-based regex patterns to extract and clean attributes.
+        2) If priority/category are not found, fall back to small ML models.
     """
     original = text.strip()
     clean = original
@@ -54,7 +65,7 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
     # ---------------------------------------
     # 1. Remove leading helper phrases
     # ---------------------------------------
-    START_PATTERNS = [
+    start_patterns = [
         r"^i need to add\s+",
         r"^i need to\s+",
         r"^i have to\s+",
@@ -70,17 +81,18 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
         r"^create\s+",
         r"^make\s+",
     ]
-    for pat in START_PATTERNS:
+    for pat in start_patterns:
         clean = re.sub(pat, "", clean, flags=re.IGNORECASE).strip()
 
+    # Defaults
     priority = 1          # default low
-    category = "general"  # default
+    category = "general"  # default category
     due_date: Optional[datetime] = None
 
     lower = clean.lower()
 
     # ---------------------------------------
-    # 2. Priority detection (RULES)
+    # 2. Priority detection (rules)
     # ---------------------------------------
     priority_from_rules = False
 
@@ -106,7 +118,7 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
     lower = clean.lower()
 
     # ---------------------------------------
-    # 3. Category detection (RULES)
+    # 3. Category detection (rules)
     # ---------------------------------------
     category_from_rules = False
 
@@ -118,7 +130,7 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
             r"in " + re.escape(cat_match.group(1)) + r" category",
             "",
             clean,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         ).strip()
 
     clean = clean.strip()
@@ -127,10 +139,11 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
     # ---------------------------------------
     # 4. Due date detection
     # ---------------------------------------
+
     # 4a. Relative phrases with "by ..."
     relative_match = re.search(
         r"\bby\s+(today|tomorrow|tonight|this evening|this afternoon|next week)\b",
-        lower
+        lower,
     )
 
     if relative_match:
@@ -148,12 +161,12 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
         elif keyword == "next week":
             due_date = now + timedelta(weeks=1)
 
-        # remove the "by <keyword>" bit from clean
+        # Remove the "by <keyword>" part from the text
         clean = re.sub(
             r"\bby\s+" + re.escape(keyword) + r"\b",
             "",
             clean,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         ).strip()
         lower = clean.lower()
 
@@ -169,7 +182,7 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
                 pass
 
     # If we successfully set a due_date at any point,
-    # **strip everything from 'by' onward** to avoid "by monday" in the name.
+    # strip everything from 'by' onward to avoid "by monday" in the task name.
     if due_date is not None:
         clean = re.sub(r"\bby\b.*$", "", clean, flags=re.IGNORECASE).strip()
         lower = clean.lower()
@@ -185,7 +198,7 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
             due_date = now
 
     # Also remove standalone time words from the task name
-    TIME_WORDS = [
+    time_words = [
         r"tomorrow",
         r"today",
         r"tonight",
@@ -193,9 +206,15 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
         r"this afternoon",
         r"next week",
         r"next month",
-        r"monday", r"tuesday", r"wednesday", r"thursday", r"friday", r"saturday", r"sunday",
+        r"monday",
+        r"tuesday",
+        r"wednesday",
+        r"thursday",
+        r"friday",
+        r"saturday",
+        r"sunday",
     ]
-    for w in TIME_WORDS:
+    for w in time_words:
         clean = re.sub(r"\b" + w + r"\b", "", clean, flags=re.IGNORECASE)
 
     clean = clean.strip()
@@ -211,6 +230,7 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
             if mapped is not None:
                 priority = mapped
         except Exception:
+            # If model prediction fails, keep the current priority
             pass
 
     if not category_from_rules and CATEGORY_MODEL is not None:
@@ -218,6 +238,7 @@ def parse_add_task_command(text: str) -> Dict[str, Any]:
             pred_category = CATEGORY_MODEL.predict([original])[0]
             category = pred_category
         except Exception:
+            # If model prediction fails, keep the current category
             pass
 
     # ---------------------------------------

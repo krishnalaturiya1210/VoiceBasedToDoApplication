@@ -4,10 +4,10 @@ from flask_sqlalchemy import SQLAlchemy
 from uuid import uuid4
 from datetime import datetime
 
-# 🔹 Our NLP parser (regex + ML for priority/category/due_date)
+# NLP parser (regex + ML for priority/category/due_date)
 from task_parsing import parse_add_task_command
 
-# 🔹 Optional: intent model (for inspection / future extensions)
+# Optional: intent model (for inspection / future extensions)
 try:
     from joblib import load as joblib_load
 except ImportError:
@@ -17,9 +17,9 @@ INTENT_MODEL = None
 if joblib_load is not None:
     try:
         INTENT_MODEL = joblib_load("intent_model.joblib")
-        print("✅ Loaded intent_model.joblib in app3.py")
+        print("Loaded intent_model.joblib in app3.py")
     except Exception as e:
-        print("⚠️ Could not load intent_model.joblib:", e)
+        print("Could not load intent_model.joblib:", e)
         INTENT_MODEL = None
 
 app = Flask(__name__)
@@ -32,15 +32,22 @@ db = SQLAlchemy(app)
 
 # --- Model ---
 class Task(db.Model):
+    """
+    Persistent representation of a single task.
+    """
     id = db.Column(db.String(36), primary_key=True)
     name = db.Column(db.String(200), nullable=False)
     done = db.Column(db.Boolean, default=False)
-    priority = db.Column(db.Integer, default=1)  # 1 = low, 2 = medium, 3 = high
+    # priority: 1 = low, 2 = medium, 3 = high
+    priority = db.Column(db.Integer, default=1)
     category = db.Column(db.String(100), default="general")
     due_date = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
+        """
+        Convert the task to a plain dictionary suitable for JSON.
+        """
         return {
             "id": self.id,
             "name": self.name,
@@ -55,15 +62,18 @@ class Task(db.Model):
 # --- Routes ---
 @app.route('/')
 def home():
-    # index3.html is your existing UI
-    return render_template('index3.html')
+    """
+    Render the main UI.
+    index.html is the front-end template.
+    """
+    return render_template('index.html')
 
 
 @app.route('/tasks', methods=['GET'])
 def get_tasks():
     """
     Return tasks as JSON, with optional filter and sorting.
-    Called by script3.js -> refreshTasks().
+    Called by script.js -> refreshTasks().
     """
     done_filter = request.args.get('done')
     sort_by = request.args.get('sort', 'created')
@@ -78,7 +88,7 @@ def get_tasks():
     if sort_by == 'priority':
         q = q.order_by(Task.priority.desc())
     elif sort_by == 'due':
-        # tasks with NULL due_date will show last; that’s fine for now
+        # tasks with NULL due_date will show last; that is acceptable for now
         q = q.order_by(Task.due_date.asc())
     elif sort_by == 'category':
         q = q.order_by(Task.category.asc())
@@ -93,10 +103,12 @@ def get_tasks():
 def add_task():
     """
     Main entry for creating tasks.
+
     Called by:
-      - script3.js processCommand() when user says "add ..." / "remind me to ..."
+      - script.js processCommand() when the user says "add ..." / "remind me to ..."
       - manual form (typed input)
-    Now uses NLP + ML via parse_add_task_command().
+
+    Uses NLP + ML via parse_add_task_command().
     """
     data = request.get_json() or {}
     task_text = (data.get('task') or "").strip()
@@ -104,15 +116,15 @@ def add_task():
         return jsonify({'error': 'No task name provided'}), 400
 
     # Optional: inspect intent with ML model (for debugging / future features).
-    # We do NOT reject here, just log. Frontend already routes commands.
+    # No validation is performed here; the frontend already routes commands.
     if INTENT_MODEL is not None:
         try:
             intent = INTENT_MODEL.predict([task_text])[0]
-            print(f"🧠 intent_model predicted: {intent} for text: {task_text!r}")
+            print(f"intent_model predicted: {intent} for text: {task_text!r}")
         except Exception as e:
-            print("⚠️ intent_model prediction failed:", e)
+            print("intent_model prediction failed:", e)
 
-    # 🔹 Use our hybrid NLP parser (regex + ML) to get name, priority, category, due_date
+    # Use the hybrid NLP parser (regex + ML) to get name, priority, category, due_date
     parsed = parse_add_task_command(task_text)
 
     if not parsed["name"]:
@@ -133,9 +145,9 @@ def add_task():
     db.session.add(new_task)
     db.session.commit()
 
-    # Build a friendly message for TTS
+    # Build a friendly message for text-to-speech
     msg = f"Task '{parsed['name']}' added"
-    # map 1,2,3 -> low/medium/high for the response sentence
+    # Map 1, 2, 3 -> low/medium/high for the response sentence
     priority_words = {1: "low", 2: "medium", 3: "high"}
     if parsed['priority'] in priority_words:
         msg += f" with {priority_words[parsed['priority']]} priority"
@@ -148,8 +160,10 @@ def add_task():
 @app.route('/mark-by-name', methods=['POST'])
 def mark_task_by_name():
     """
-    Called by script3.js when user says:
-      'mark buy milk as done'
+    Mark a task as done by name.
+
+    Called by script.js when the user says:
+      "mark buy milk as done"
     """
     data = request.get_json() or {}
     name = (data.get('name') or "").strip()
@@ -168,8 +182,10 @@ def mark_task_by_name():
 @app.route('/delete-by-name', methods=['POST'])
 def delete_task_by_name():
     """
-    Called by script3.js when user says:
-      'delete buy milk' / 'remove finish my homework'
+    Delete a task by name.
+
+    Called by script.js when the user says:
+      "delete buy milk" / "remove finish my homework"
     """
     data = request.get_json() or {}
     name = (data.get('name') or "").strip()
@@ -188,7 +204,7 @@ def delete_task_by_name():
 @app.route('/toggle', methods=['POST'])
 def toggle_task():
     """
-    Toggle done/undone by ID (used by checkbox click in UI).
+    Toggle done/undone by ID (used by checkbox click in the UI).
     """
     data = request.get_json() or {}
     task_id = data.get('id')
@@ -209,7 +225,7 @@ def toggle_task():
 @app.route('/delete', methods=['POST'])
 def delete_task():
     """
-    Delete by ID (used by Delete button in the UI).
+    Delete a task by ID (used by the Delete button in the UI).
     """
     data = request.get_json() or {}
     task_id = data.get('id')
@@ -242,7 +258,7 @@ def clear_completed():
 @app.route('/clear', methods=['POST'])
 def clear_all():
     """
-    Clear ALL tasks.
+    Clear all tasks.
     """
     Task.query.delete()
     db.session.commit()
@@ -252,6 +268,9 @@ def clear_all():
 # --- Service worker from /sw.js (controls '/') ---
 @app.route('/sw.js')
 def service_worker():
+    """
+    Serve the service worker script from the static directory.
+    """
     return send_from_directory('static', 'sw.js', mimetype='application/javascript')
 
 
@@ -260,5 +279,5 @@ with app.app_context():
     db.create_all()
 
 if __name__ == '__main__':
-    # host='0.0.0.0' lets your phone reach it over Wi-Fi
+    # host='0.0.0.0' lets a phone on the same network reach it over Wi-Fi
     app.run(host='0.0.0.0', port=5000, debug=True)

@@ -4,8 +4,11 @@
   <link rel="icon" href="data:,">
   <meta charset="UTF-8" />
 
-  <!-- IMPORTANT for mobile scaling -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Viewport: no maximum-scale, no forced zoom -->
+  <meta 
+    name="viewport" 
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
 
   <title>Voice - Based To-Do App</title>
 
@@ -13,30 +16,48 @@
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#4CAF50">
 
-  <script src="/static/script3.js" defer></script>
+  <script src="/static/script.js" defer></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
 
-    body {
-      font-family: "Inter", system-ui, sans-serif;
-      background: linear-gradient(135deg, #dde9f8, #f7d9e3);
+    html, body {
       margin: 0;
-      padding: 10px;
-      color: #2c3e50;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100vh;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      -webkit-text-size-adjust: 100%; /* prevent iOS from auto-zooming text */
       overflow-x: hidden;
     }
 
+    /* Main app wrapper so we can pad inside instead of padding the body
+       (helps avoid the “zoomed” feeling on mobile) */
+    .app-root {
+      min-height: 100vh;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 12px 10px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Inter", system-ui, sans-serif;
+      background: linear-gradient(135deg, #dde9f8, #f7d9e3);
+      display: flex;
+      justify-content: center;
+    }
+
     h1 {
-      font-size: 1.8rem;
+      font-size: 1.6rem;   /* slightly smaller to reduce “zoomed” feel */
       font-weight: 700;
       color: #000000; /* pure black */
-      letter-spacing: 1.2px;
-      margin-top: 30px;
+      letter-spacing: 1.1px;
+      margin-top: 24px;
+      margin-bottom: 10px;
       text-align: center;
 
       /* subtle white glow */
@@ -45,25 +66,26 @@
         0 0 8px rgba(255,255,255,0.4);
     }
 
-
     #status {
       background: rgba(255,255,255,0.5);
       padding: 8px 16px;
       border-radius: 12px;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       color: #374151;
       box-shadow: 0 4px 10px rgba(0,0,0,0.05);
       backdrop-filter: blur(10px);
       margin-bottom: 15px;
       animation: fadeIn 1s ease both;
       text-align: center;
+      width: 100%;
+      box-sizing: border-box;
     }
 
     button, select {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 500;
       letter-spacing: 0.3px;
-      padding: 10px 14px;
+      padding: 9px 13px;
       border-radius: 10px;
       cursor: pointer;
       transition: all 0.25s ease;
@@ -80,7 +102,10 @@
       box-shadow: 0 6px 18px rgba(72, 187, 120, 0.4);
     }
 
-    button:active { transform: scale(0.96); box-shadow: none; }
+    button:active { 
+      transform: scale(0.96); 
+      box-shadow: none; 
+    }
 
     .danger {
       background: linear-gradient(90deg, #e74c3c, #c0392b);
@@ -99,26 +124,27 @@
     }
 
     #controls {
-      margin-top: 10px;
+      margin-top: 6px;
       display: flex;
-      gap: 12px;
+      gap: 10px;
       justify-content: center;
       flex-wrap: wrap;
       align-items: center;
+      width: 100%;
     }
 
     #taskList {
       width: 100%;
-      max-width: 480px;
-      margin: 30px auto;
+      margin: 20px auto 0;
       background: rgba(255, 255, 255, 0.8);
-      padding: 20px;
+      padding: 16px;
       border-radius: 16px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.08);
       backdrop-filter: blur(10px);
+      box-sizing: border-box;
     }
 
-    /* ★ New Task Card Layout ★ */
+    /* Task card layout */
     .task {
       background: #ffffff;
       border-radius: 14px;
@@ -137,7 +163,7 @@
     }
 
     .task-title {
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 600;
       color: #111827;
       flex: 1;
@@ -217,22 +243,24 @@
     }
 
     #manualForm {
-      margin-top: 25px;
+      margin-top: 18px;
       display: flex;
       justify-content: center;
       gap: 10px;
       flex-wrap: wrap;
+      width: 100%;
     }
 
     #manualInput {
-      padding: 10px 12px;
+      padding: 9px 11px;
       border-radius: 10px;
       border: 1px solid #d1d5db;
-      width: 260px;
-      max-width: 100%;
+      width: 100%;
+      max-width: 260px;
       outline: none;
       transition: all 0.25s ease;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
+      box-sizing: border-box;
     }
 
     #manualInput:focus {
@@ -254,10 +282,13 @@
       transition: opacity 0.6s ease;
     }
 
-    #overlay.fade-out { opacity: 0; pointer-events: none; }
+    #overlay.fade-out { 
+      opacity: 0; 
+      pointer-events: none; 
+    }
 
     #overlay p {
-      font-size: 1.6rem;
+      font-size: 1.4rem;
       color: #222;
       font-weight: 600;
       text-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
@@ -265,7 +296,10 @@
       padding: 0 20px;
     }
 
-    #overlay:hover p { transform: scale(1.03); transition: transform 0.3s ease; }
+    #overlay:hover p { 
+      transform: scale(1.03); 
+      transition: transform 0.3s ease; 
+    }
 
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
@@ -286,9 +320,9 @@
       background: linear-gradient(90deg, #4CAF50, #45a049);
       color: white;
       border: none;
-      padding: 10px 16px;
+      padding: 9px 14px;
       border-radius: 10px;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       cursor: pointer;
       transition: all 0.25s ease;
     }
@@ -325,7 +359,7 @@
       display: block;
     }
 
-    /* 🔹 Floating Help Button */
+    /* Floating Help Button */
     #helpBtn {
       position: fixed;
       bottom: 20px;
@@ -350,7 +384,7 @@
       box-shadow: 0 10px 24px rgba(22,163,74,0.5);
     }
 
-    /* 🔹 Help Modal */
+    /* Help Modal */
     #helpModal {
       position: fixed;
       inset: 0;
@@ -375,6 +409,7 @@
       box-shadow: 0 12px 30px rgba(0,0,0,0.25);
       max-height: 80vh;
       overflow-y: auto;
+      box-sizing: border-box;
     }
 
     .help-header {
@@ -385,7 +420,7 @@
     }
 
     .help-header h2 {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       margin: 0;
       color: #111827;
     }
@@ -438,27 +473,29 @@
     <p>Welcome to voice based to do application! Click to start!</p>
   </div>
 
-  <h1>Voice-Based To-Do App</h1>
-  <div id="status" aria-live="polite">Say "Hey To Do" to start speaking.</div>
+  <div class="app-root">
+    <h1>Voice-Based To-Do App</h1>
+    <div id="status" aria-live="polite">Say "Hey To Do" to start speaking.</div>
 
-  <div id="controls">
-    <button id="muteBtn">Stop Listening</button>
-    <button id="clearBtn" class="danger">Clear All</button>
+    <div id="controls">
+      <button id="muteBtn">Stop Listening</button>
+      <button id="clearBtn" class="danger">Clear All</button>
+    </div>
+
+    <div id="taskList" role="list" aria-label="Tasks"></div>
+
+    <div id="fallback">
+      <form id="manualForm">
+        <input id="manualInput" placeholder="Type a task and press Add" aria-label="Task name" />
+        <button type="submit">Add</button>
+      </form>
+    </div>
   </div>
 
-  <div id="taskList" role="list" aria-label="Tasks"></div>
-
-  <div id="fallback">
-    <form id="manualForm">
-      <input id="manualInput" placeholder="Type a task and press Add" aria-label="Task name" />
-      <button type="submit">Add</button>
-    </form>
-  </div>
-
-  <!-- 🔹 Floating Help Button -->
+  <!-- Floating Help Button -->
   <button id="helpBtn" aria-label="Show voice command help">?</button>
 
-  <!-- 🔹 Help Modal -->
+  <!-- Help Modal -->
   <div id="helpModal" aria-hidden="true">
     <div class="help-card">
       <div class="help-header">
@@ -482,7 +519,7 @@
           <li><code>Remind me to pay rent by Friday</code></li>
         </ul>
         <p class="help-hint">
-          I’ll try to detect the task name, <b>priority</b>, <b>category</b>, and <b>due date</b> automatically.
+          I will try to detect the task name, <b>priority</b>, <b>category</b>, and <b>due date</b> automatically.
         </p>
       </div>
 
@@ -522,7 +559,7 @@
       </div>
 
       <p class="help-hint">
-        Tip: You can also type in the box below if speaking isn’t convenient.
+        Tip: You can also type in the box below if speaking is not convenient.
       </p>
     </div>
   </div>

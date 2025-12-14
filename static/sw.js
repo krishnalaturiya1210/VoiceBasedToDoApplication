@@ -1,7 +1,7 @@
 const CACHE_NAME = "voice-todo-v1";
 const ASSETS_TO_CACHE = [
   "/",
-  "/static/script3.js",
+  "/static/script.js",
   "/static/manifest.json"
   // Add icons etc. here if you want more aggressive offline support
 ];

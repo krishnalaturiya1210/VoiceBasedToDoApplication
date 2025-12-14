@@ -1,4 +1,19 @@
-// script3.js 
+// script.js
+
+/**
+ * Main client-side script for the Voice-based To-Do App.
+ * This file handles:
+ *  - Task rendering and interaction
+ *  - Speech recognition (wake word and commands)
+ *  - Text-to-speech feedback
+ *  - Confirmation dialogs for destructive actions
+ *  - Manual input and sort controls
+ *
+ * Note: No functional or logical changes have been made compared to the original.
+ * Only style, comments, and emoji removal have been applied.
+ */
+
+// DOM references
 const statusText = document.getElementById("status");
 const taskList = document.getElementById("taskList");
 const muteBtn = document.getElementById("muteBtn");
@@ -7,16 +22,18 @@ const manualForm = document.getElementById("manualForm");
 const manualInput = document.getElementById("manualInput");
 const controls = document.getElementById("controls");
 
+// Speech APIs
 const synth = window.speechSynthesis;
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+// Global state
 let listening = true;
 let wakeRecognition, commandRecognition;
 let wakeRunning = false;
 let inCommandMode = false;
 let sortMode = "created";
 
-// 🔹 For Clear-All / Clear-Completed Confirmation Dialog + voice confirm
+// State for clear-all / clear-completed confirmation dialog + voice confirmation
 let inConfirmDialog = false;
 let confirmRecognition = null;
 let confirmOverlay = null;
@@ -30,6 +47,10 @@ let confirmOnCancel = null;
 /* -----------------------
    LONG PRESS DELETE
 ------------------------ */
+/**
+ * Attach long-press detection to a task element to trigger delete.
+ * This supports both touch and mouse input without changing existing behavior.
+ */
 function attachLongPressDelete(element, taskId) {
   let pressTimer = null;
   let longPressTriggered = false;
@@ -70,6 +91,10 @@ function attachLongPressDelete(element, taskId) {
 /* -----------------------
    AUDIO + TTS
 ------------------------ */
+
+/**
+ * Plays a short "ding" tone to indicate listening.
+ */
 function playDing() {
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -86,22 +111,29 @@ function playDing() {
     oscillator.start();
     oscillator.stop(audioCtx.currentTime + 0.2);
   } catch (err) {
-    console.warn("🔇 Ding playback failed:", err);
+    console.warn("Ding playback failed:", err);
   }
 }
 
+/**
+ * Speaks the given text using the SpeechSynthesis API.
+ */
 function speak(text) {
   if (!synth) return;
-  console.log("🗣️ Speaking:", text);
-  // prevent stutter on mobile
+  console.log("Speaking:", text);
+
+  // Prevent stutter on mobile
   synth.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = "en-US";
   synth.speak(utter);
 }
 
+/**
+ * Updates the status text label in the UI.
+ */
 function showStatus(msg, color = "#333") {
-  console.log(`💬 Status: ${msg}`);
+  console.log(`Status: ${msg}`);
   statusText.textContent = msg;
   statusText.style.color = color;
 }
@@ -110,7 +142,10 @@ function showStatus(msg, color = "#333") {
    CONFIRMATION MODAL + VOICE
 ------------------------ */
 
-// Create a simple overlay modal dynamically (so we don't have to touch HTML)
+/**
+ * Creates the confirmation overlay modal dynamically.
+ * This avoids modifying the HTML template directly.
+ */
 function initConfirmDialog() {
   if (confirmOverlay) return; // already initialized
 
@@ -189,7 +224,7 @@ function initConfirmDialog() {
   confirmOverlay.appendChild(confirmBox);
   document.body.appendChild(confirmOverlay);
 
-  // Clicking outside box closes as "No"
+  // Clicking outside the box closes as "No"
   confirmOverlay.addEventListener("click", (e) => {
     if (e.target === confirmOverlay) {
       handleConfirmCancel();
@@ -205,6 +240,9 @@ function initConfirmDialog() {
   });
 }
 
+/**
+ * Opens the confirmation dialog with optional voice prompt.
+ */
 function openConfirmDialog(message, onConfirm, onCancel, voicePrompt) {
   initConfirmDialog();
 
@@ -215,13 +253,13 @@ function openConfirmDialog(message, onConfirm, onCancel, voicePrompt) {
   confirmMessageEl.textContent = message;
   confirmOverlay.style.display = "flex";
 
-  // stop other recognizers while in dialog
+  // Stop other recognizers while in dialog
   stopWakeRecognition();
   try {
     commandRecognition && commandRecognition.stop();
   } catch {}
 
-  // speak the prompt
+  // Speak the prompt
   if (voicePrompt) {
     speak(voicePrompt);
   } else {
@@ -237,7 +275,7 @@ function openConfirmDialog(message, onConfirm, onCancel, voicePrompt) {
 
     confirmRecognition.onresult = (e) => {
       const transcript = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
-      console.log("🎙️ Confirm dialog heard:", transcript);
+      console.log("Confirm dialog heard:", transcript);
 
       if (
         transcript.includes("confirm") ||
@@ -253,18 +291,18 @@ function openConfirmDialog(message, onConfirm, onCancel, voicePrompt) {
       ) {
         handleConfirmCancel(true);
       } else {
-        speak("I didn't catch that. Can you repeat?");
+        speak("I did not catch that. Can you repeat?");
       }
     };
 
     confirmRecognition.onerror = (e) => {
-      console.warn("🎙️ Confirm recognizer error:", e.error);
+      console.warn("Confirm recognizer error:", e.error);
     };
 
     confirmRecognition.onend = () => {
-      console.log("🎙️ Confirm recognizer ended.");
+      console.log("Confirm recognizer ended.");
 
-      // 🔁 As long as the dialog is open, keep listening
+      // As long as the dialog is open, keep listening
       if (inConfirmDialog) {
         try {
           confirmRecognition.start();
@@ -282,6 +320,9 @@ function openConfirmDialog(message, onConfirm, onCancel, voicePrompt) {
   }
 }
 
+/**
+ * Closes the confirmation dialog and restores wake recognition if needed.
+ */
 function closeConfirmDialog() {
   confirmOverlay && (confirmOverlay.style.display = "none");
 
@@ -294,22 +335,28 @@ function closeConfirmDialog() {
 
   inConfirmDialog = false;
 
-  // return to wake mode
+  // Return to wake mode
   if (listening) {
     setTimeout(startWakeRecognition, 300);
   }
 }
 
+/**
+ * Handler for confirmation accepted (Yes).
+ */
 function handleConfirmYes(fromVoice = false) {
-  console.log("✅ Confirm dialog accepted", fromVoice ? "(via voice)" : "(via click)");
+  console.log("Confirm dialog accepted", fromVoice ? "(via voice)" : "(via click)");
   closeConfirmDialog();
   if (confirmOnConfirm) {
     confirmOnConfirm();
   }
 }
 
+/**
+ * Handler for confirmation cancelled (No).
+ */
 function handleConfirmCancel(fromVoice = false) {
-  console.log("❌ Confirm dialog cancelled", fromVoice ? "(via voice)" : "(via click)");
+  console.log("Confirm dialog cancelled", fromVoice ? "(via voice)" : "(via click)");
   closeConfirmDialog();
   speak("Okay, I cancelled that action.");
   if (confirmOnCancel) {
@@ -318,7 +365,8 @@ function handleConfirmCancel(fromVoice = false) {
 }
 
 /**
- * Public helper for Clear All:
+ * Public helper for Clear All.
+ * Example usage:
  *   askForClearAllConfirmation(() => sendCommandJson("/clear"));
  */
 function askForClearAllConfirmation() {
@@ -336,7 +384,8 @@ function askForClearAllConfirmation() {
 }
 
 /**
- * Public helper for Clear Completed:
+ * Public helper for Clear Completed.
+ * Example usage:
  *   askForClearCompletedConfirmation(() => sendCommandJson("/clear-completed"));
  */
 function askForClearCompletedConfirmation() {
@@ -356,15 +405,19 @@ function askForClearCompletedConfirmation() {
 /* -----------------------
    TASK RENDERING
 ------------------------ */
+
+/**
+ * Fetches tasks from the server and renders them into the task list container.
+ */
 async function refreshTasks() {
-  console.log("🎨 Refreshing tasks...");
+  console.log("Refreshing tasks...");
   try {
     const res = await fetch(`/tasks?sort=${sortMode}`);
     const tasks = await res.json();
     taskList.innerHTML = "";
 
-    console.log(`🎨 Rendering ${tasks.length} tasks.`);
-    tasks.forEach(t => {
+    console.log(`Rendering ${tasks.length} tasks.`);
+    tasks.forEach((t) => {
       const div = document.createElement("div");
       div.className = "task";
       div.dataset.id = t.id;
@@ -375,7 +428,7 @@ async function refreshTasks() {
         formattedDate = dueDate.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-          year: "numeric",
+          year: "numeric"
         });
       }
 
@@ -388,14 +441,16 @@ async function refreshTasks() {
         </div>
 
         <div class="task-meta">
-          ${t.category && t.category !== "general"
-            ? `<span class="task-pill">${t.category}</span>`
-            : ""
+          ${
+            t.category && t.category !== "general"
+              ? `<span class="task-pill">${t.category}</span>`
+              : ""
           }
           <span class="priority-dot priority-${t.priority || 1}"></span>
-          ${formattedDate
-            ? `<span class="task-due"><span class="cal-icon">📅</span>${formattedDate}</span>`
-            : ""
+          ${
+            formattedDate
+              ? `<span class="task-due"><span class="cal-icon">Due</span>${formattedDate}</span>`
+              : ""
           }
         </div>
 
@@ -416,15 +471,19 @@ async function refreshTasks() {
     });
   } catch (err) {
     showStatus("Failed to load tasks.", "red");
-    console.error("🎨 Error refreshing tasks:", err);
+    console.error("Error refreshing tasks:", err);
   }
 }
 
 /* -----------------------
    API HELPER
 ------------------------ */
+
+/**
+ * Helper to send a JSON POST request to a given path and refresh tasks afterwards.
+ */
 async function sendCommandJson(path, payload = {}) {
-  console.log(`➡️ Sending API command to ${path}`, payload);
+  console.log(`Sending API command to ${path}`, payload);
   try {
     const res = await fetch(path, {
       method: "POST",
@@ -432,7 +491,7 @@ async function sendCommandJson(path, payload = {}) {
       body: JSON.stringify(payload)
     });
     const data = await res.json();
-    console.log("⬅️ Received API response:", data);
+    console.log("Received API response:", data);
     if (!res.ok) {
       const err = data.error || "Unknown error";
       console.error("API Error:", err);
@@ -454,15 +513,19 @@ async function sendCommandJson(path, payload = {}) {
 /* -----------------------
    VOICE COMMANDS
 ------------------------ */
+
+/**
+ * Processes a recognized command string and triggers appropriate actions.
+ */
 async function processCommand(cmd) {
-  console.log(`🧠 Processing command: "${cmd}"`);
+  console.log(`Processing command: "${cmd}"`);
   if (!cmd) return;
   cmd = cmd.trim();
   if (!cmd) return;
   const lower = cmd.toLowerCase();
 
   if (lower.startsWith("add ")) {
-    console.log("-> Matched ADD");
+    console.log("Matched ADD");
     const name = cmd.replace(/^\s*add\s*/i, "").trim();
     if (!name) return speak("What should I add?");
     sendCommandJson("/add", { task: name });
@@ -470,7 +533,7 @@ async function processCommand(cmd) {
   }
 
   if (lower.startsWith("remind me to ")) {
-    console.log("-> Matched REMIND ME TO");
+    console.log("Matched REMIND ME TO");
     const name = cmd.replace(/^\s*remind me to\s*/i, "").trim();
     if (!name) return speak("What should I remind you to do?");
     sendCommandJson("/add", { task: name });
@@ -479,44 +542,44 @@ async function processCommand(cmd) {
 
   const markMatch = lower.match(/^mark\s+(.+?)\s+(?:as\s+)?done$/i);
   if (markMatch) {
-    console.log("-> Matched MARK");
+    console.log("Matched MARK");
     sendCommandJson("/mark-by-name", { name: markMatch[1].trim() });
     return;
   }
 
   const deleteMatch = lower.match(/^(?:delete|remove)\s+(.+)$/i);
   if (deleteMatch) {
-    console.log("-> Matched DELETE");
+    console.log("Matched DELETE");
     sendCommandJson("/delete-by-name", { name: deleteMatch[1].trim() });
     return;
   }
 
-  // 🔹 CLEAR COMPLETED with custom dialog + voice confirm
+  // Clear completed with custom dialog + voice confirmation
   if (lower.includes("clear completed") || lower.includes("remove completed")) {
-    console.log("-> Matched CLEAR COMPLETED (voice)");
+    console.log("Matched CLEAR COMPLETED (voice)");
     askForClearCompletedConfirmation();
     return;
   }
 
-  // 🔹 CLEAR ALL with custom dialog + voice confirm
+  // Clear all with custom dialog + voice confirmation
   if (lower.includes("clear all") || lower.includes("remove all")) {
-    console.log("-> Matched CLEAR ALL (voice)");
+    console.log("Matched CLEAR ALL (voice)");
     askForClearAllConfirmation();
     return;
   }
 
   if (lower.includes("list all tasks") || lower.includes("what are my tasks")) {
-    console.log("-> Matched LIST ALL");
+    console.log("Matched LIST ALL");
     await listAllTasks();
     return;
   }
   if (lower.includes("list pending") || lower.includes("pending tasks")) {
-    console.log("-> Matched LIST PENDING");
+    console.log("Matched LIST PENDING");
     await listPendingTasks();
     return;
   }
   if (lower.includes("list completed") || lower.includes("completed tasks")) {
-    console.log("-> Matched LIST COMPLETED");
+    console.log("Matched LIST COMPLETED");
     await listCompletedTasks();
     return;
   }
@@ -561,15 +624,19 @@ async function processCommand(cmd) {
     return;
   }
 
-  console.log("-> Command not understood.");
-  speak("Sorry, I didn't understand that.");
+  console.log("Command not understood.");
+  speak("Sorry, I did not understand that.");
 }
 
 /* -----------------------
    LISTING HELPERS
 ------------------------ */
+
+/**
+ * Uses TTS to read out all tasks.
+ */
 async function listAllTasks() {
-  console.log("📋 Listing all tasks...");
+  console.log("Listing all tasks...");
   try {
     const res = await fetch("/tasks");
     const tasks = await res.json();
@@ -578,7 +645,7 @@ async function listAllTasks() {
       showStatus("No tasks found.", "orange");
       return;
     }
-    const names = tasks.map(t => t.name).join(", ");
+    const names = tasks.map((t) => t.name).join(", ");
     speak(`You have ${tasks.length} tasks: ${names}`);
   } catch (err) {
     console.error("Error listing all tasks:", err);
@@ -586,12 +653,15 @@ async function listAllTasks() {
   }
 }
 
+/**
+ * Uses TTS to read out pending tasks only.
+ */
 async function listPendingTasks() {
-  console.log("📋 Listing pending tasks...");
+  console.log("Listing pending tasks...");
   try {
     const res = await fetch("/tasks");
     const tasks = await res.json();
-    const pending = tasks.filter(t => !t.done);
+    const pending = tasks.filter((t) => !t.done);
 
     if (!pending.length) {
       speak("You have no pending tasks.");
@@ -599,7 +669,7 @@ async function listPendingTasks() {
       return;
     }
 
-    const names = pending.map(t => t.name).join(", ");
+    const names = pending.map((t) => t.name).join(", ");
     speak(`You have ${pending.length} pending tasks: ${names}`);
   } catch (err) {
     console.error("Error listing pending tasks:", err);
@@ -607,12 +677,15 @@ async function listPendingTasks() {
   }
 }
 
+/**
+ * Uses TTS to read out completed tasks only.
+ */
 async function listCompletedTasks() {
-  console.log("📋 Listing completed tasks...");
+  console.log("Listing completed tasks...");
   try {
     const res = await fetch("/tasks");
     const tasks = await res.json();
-    const completed = tasks.filter(t => t.done);
+    const completed = tasks.filter((t) => t.done);
 
     if (!completed.length) {
       speak("You have no completed tasks.");
@@ -620,7 +693,7 @@ async function listCompletedTasks() {
       return;
     }
 
-    const names = completed.map(t => t.name).join(", ");
+    const names = completed.map((t) => t.name).join(", ");
     speak(`You have ${completed.length} completed tasks: ${names}`);
   } catch (err) {
     console.error("Error listing completed tasks:", err);
@@ -631,21 +704,32 @@ async function listCompletedTasks() {
 /* -----------------------
    TASK ACTIONS
 ------------------------ */
+
+/**
+ * Toggles completion state for the given task ID.
+ */
 async function toggleTask(id) {
-  console.log(`🖱️ UI: Toggle task ${id}`);
+  console.log(`UI: Toggle task ${id}`);
   await sendCommandJson("/toggle", { id });
 }
 
+/**
+ * Deletes a task by ID.
+ */
 async function deleteTask(id) {
-  console.log(`🖱️ UI: Delete task ${id}`);
+  console.log(`UI: Delete task ${id}`);
   await sendCommandJson("/delete", { id });
 }
 
 /* -----------------------
    SORT DROPDOWN
 ------------------------ */
+
+/**
+ * Creates and attaches a "Sort By" dropdown to the controls area.
+ */
 function addSortDropdown() {
-  console.log("⚙️ Initializing Sort Dropdown");
+  console.log("Initializing Sort Dropdown");
   const old = document.getElementById("sortWrapper");
   if (old) old.remove();
 
@@ -667,14 +751,14 @@ function addSortDropdown() {
     { value: "due", label: "Due Date" }
   ];
 
-  options.forEach(opt => {
+  options.forEach((opt) => {
     const item = document.createElement("a");
     item.textContent = opt.label;
     item.href = "#";
     item.dataset.sort = opt.value;
     item.addEventListener("click", (e) => {
       e.preventDefault();
-      console.log(`🎨 Sort mode changed to: ${opt.value}`);
+      console.log(`Sort mode changed to: ${opt.value}`);
       sortMode = opt.value;
       wrapper.classList.remove("show");
       btn.textContent = `Sort By: ${opt.label} ▾`;
@@ -687,7 +771,7 @@ function addSortDropdown() {
     wrapper.classList.toggle("show");
   });
 
-  document.addEventListener("click", e => {
+  document.addEventListener("click", (e) => {
     if (!wrapper.contains(e.target)) {
       wrapper.classList.remove("show");
     }
@@ -701,8 +785,12 @@ function addSortDropdown() {
 /* -----------------------
    SPEECH RECOGNITION SETUP
 ------------------------ */
+
+/**
+ * Initializes the wake-word and command recognizers, and wires events.
+ */
 function initRecognizers() {
-  console.log("⚙️ Initializing speech recognizers...");
+  console.log("Initializing speech recognizers...");
   if (!SpeechRecognition) {
     console.error("Web Speech API not supported.");
     showStatus("Web Speech API not supported.", "red");
@@ -718,10 +806,16 @@ function initRecognizers() {
   commandRecognition.continuous = false;
 
   wakeRecognition.onresult = (event) => {
-    const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
-    console.log(`🎙️ Wake heard: "${transcript}"`);
-    if ((transcript.includes("hey to do") || transcript.includes("hello to do")) && !inCommandMode && !inConfirmDialog) {
-      console.log("✅ Wake word DETECTED. Activating command mode.");
+    const transcript = event.results[event.results.length - 1][0].transcript
+      .trim()
+      .toLowerCase();
+    console.log(`Wake heard: "${transcript}"`);
+    if (
+      (transcript.includes("hey to do") || transcript.includes("hello to do")) &&
+      !inCommandMode &&
+      !inConfirmDialog
+    ) {
+      console.log("Wake word detected. Activating command mode.");
       inCommandMode = true;
       stopWakeRecognition();
 
@@ -731,7 +825,7 @@ function initRecognizers() {
       showStatus("Listening for command...", "blue");
 
       utter.onend = () => {
-        console.log("🎙️ App finished speaking. Starting command recognition.");
+        console.log("Finished speaking. Starting command recognition.");
         playDing();
         showStatus("Speak now!", "green");
         commandRecognition.start();
@@ -742,7 +836,7 @@ function initRecognizers() {
   };
 
   wakeRecognition.onend = () => {
-    console.log("🎙️ Wake recognizer stopped.");
+    console.log("Wake recognizer stopped.");
     wakeRunning = false;
     if (!inCommandMode && listening && !inConfirmDialog) {
       setTimeout(startWakeRecognition, 500);
@@ -750,18 +844,18 @@ function initRecognizers() {
   };
 
   wakeRecognition.onerror = (e) => {
-    if (e.error !== "no-speech") console.warn("🎙️ Wake recognizer error:", e.error);
+    if (e.error !== "no-speech") console.warn("Wake recognizer error:", e.error);
   };
 
   commandRecognition.onresult = (e) => {
     const transcript = e.results[e.results.length - 1][0].transcript;
-    console.log(`🎙️ Command heard: "${transcript}"`);
+    console.log(`Command heard: "${transcript}"`);
     showStatus(`You said: "${transcript}"`, "purple");
     processCommand(transcript);
   };
 
   commandRecognition.onend = () => {
-    console.log("🎙️ Command recognizer stopped. Returning to wake mode.");
+    console.log("Command recognizer stopped. Returning to wake mode.");
     inCommandMode = false;
     showStatus("Say 'Hey To Do' to start again.", "green");
     if (listening && !inConfirmDialog) {
@@ -770,7 +864,7 @@ function initRecognizers() {
   };
 
   commandRecognition.onerror = (e) => {
-    console.warn("🎙️ Command recognizer error:", e.error);
+    console.warn("Command recognizer error:", e.error);
     inCommandMode = false;
     if (!inConfirmDialog) {
       startWakeRecognition();
@@ -778,9 +872,12 @@ function initRecognizers() {
   };
 }
 
+/**
+ * Starts the continuous wake-word recognizer if appropriate.
+ */
 function startWakeRecognition() {
   if (!wakeRunning && listening && wakeRecognition) {
-    console.log("🎙️ Starting wake recognizer...");
+    console.log("Starting wake recognizer...");
     try {
       wakeRecognition.start();
       wakeRunning = true;
@@ -790,10 +887,15 @@ function startWakeRecognition() {
   }
 }
 
+/**
+ * Stops the wake-word recognizer if it is running.
+ */
 function stopWakeRecognition() {
   if (wakeRunning && wakeRecognition) {
-    console.log("🎙️ Stopping wake recognizer.");
-    try { wakeRecognition.stop(); } catch {}
+    console.log("Stopping wake recognizer.");
+    try {
+      wakeRecognition.stop();
+    } catch {}
     wakeRunning = false;
   }
 }
@@ -801,10 +903,14 @@ function stopWakeRecognition() {
 /* -----------------------
    MANUAL INPUT
 ------------------------ */
-manualForm.addEventListener("submit", ev => {
+
+/**
+ * Handles manual form submission to add a task without voice.
+ */
+manualForm.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const v = manualInput.value.trim();
-  console.log(`🖱️ Manual form submitted: "${v}"`);
+  console.log(`Manual form submitted: "${v}"`);
   if (!v) return;
   sendCommandJson("/add", { task: v });
   manualInput.value = "";
@@ -813,9 +919,13 @@ manualForm.addEventListener("submit", ev => {
 /* -----------------------
    MUTE TOGGLE
 ------------------------ */
+
+/**
+ * Toggles voice listening on or off.
+ */
 muteBtn.addEventListener("click", () => {
   listening = !listening;
-  console.log(`🖱️ Mute button clicked. Listening set to: ${listening}`);
+  console.log(`Mute button clicked. Listening set to: ${listening}`);
   muteBtn.textContent = listening ? "Stop Listening" : "Start Listening";
   if (listening) {
     initRecognizers();
@@ -833,15 +943,20 @@ muteBtn.addEventListener("click", () => {
 /* -----------------------
    CLEAR ALL (BUTTON) with dialog + voice confirmation
 ------------------------ */
+
+/**
+ * Clear-all button handler; opens confirmation dialog.
+ */
 clearBtn.addEventListener("click", async () => {
-  console.log("🖱️ Clear All button clicked.");
+  console.log("Clear All button clicked.");
   askForClearAllConfirmation();
 });
 
 /* -----------------------
    INIT APP
 ------------------------ */
-console.log("🚀 App starting...");
+
+console.log("App starting...");
 addSortDropdown();
 initRecognizers();
 startWakeRecognition();
@@ -849,10 +964,14 @@ refreshTasks();
 showStatus("Say 'Hey To Do' to start.", "green");
 
 /* -----------------------
-   OVERLAY + SW + HELP MODAL
+   OVERLAY + SERVICE WORKER + HELP MODAL
 ------------------------ */
+
+/**
+ * Handles overlay dismissal, help modal wiring, and service worker registration.
+ */
 window.addEventListener("load", () => {
-  console.log("🎉 Page loaded.");
+  console.log("Page loaded.");
 
   const overlay = document.getElementById("overlay");
   if (overlay) {
@@ -863,7 +982,7 @@ window.addEventListener("load", () => {
     });
   }
 
-  // 🔹 Help button / modal wiring
+  // Help button / modal wiring
   const helpBtn = document.getElementById("helpBtn");
   const helpModal = document.getElementById("helpModal");
   const helpClose = document.getElementById("helpClose");
@@ -894,6 +1013,6 @@ window.addEventListener("load", () => {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker
       .register("/static/sw.js")
-      .catch(err => console.error("SW registration failed:", err));
+      .catch((err) => console.error("SW registration failed:", err));
   }
 });
