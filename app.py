@@ -1,4 +1,5 @@
 # app3.py
+import os   # NEW
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from uuid import uuid4
@@ -25,8 +26,22 @@ if joblib_load is not None:
 app = Flask(__name__)
 
 # --- Database setup ---
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tasks.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Use Postgres on Render (DATABASE_URL), fall back to local SQLite for dev.
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+db_url = os.environ.get("DATABASE_URL")
+
+# Render (and many platforms) sometimes give postgres://, but SQLAlchemy
+# expects postgresql://. This makes it compatible with both.
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+if not db_url:
+    # Local development / no env var set
+    db_url = "sqlite:///" + os.path.join(basedir, "tasks.db")
+
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
 
