@@ -44,6 +44,17 @@ let confirmNoBtn = null;
 let confirmOnConfirm = null;
 let confirmOnCancel = null;
 
+// State for Edit Task dialog
+let editOverlay = null;
+let editBox = null;
+let editNameInput = null;
+let editPrioritySelect = null;
+let editCategoryInput = null;
+let editDueInput = null;
+let editSaveBtn = null;
+let editCancelBtn = null;
+let currentEditTaskId = null;
+
 /* -----------------------
    WAKE WORD FUZZY MATCH
 ------------------------ */
@@ -86,7 +97,7 @@ function wakeWordHeard(rawTranscript) {
     "hate to do",
     "hate todo",
     "hate to-do",
-    "hate odo",   // explicitly requested
+    "hate odo",
     "hate odoo",
     "hate todu",
     "hate tudu",
@@ -94,10 +105,7 @@ function wakeWordHeard(rawTranscript) {
     // Shorter fragments that sometimes appear
     "hey do",
     "hey to",
-    "hey odo",
-
-    "to do",
-    "todooo"
+    "hey odo"
   ];
 
   // Check if any variant appears as a substring
@@ -485,6 +493,256 @@ function askForClearCompletedConfirmation() {
 }
 
 /* -----------------------
+   EDIT TASK MODAL
+------------------------ */
+
+/**
+ * Create the Edit Task overlay/modal dynamically.
+ */
+function initEditDialog() {
+  if (editOverlay) return;
+
+  editOverlay = document.createElement("div");
+  editOverlay.id = "editOverlay";
+  Object.assign(editOverlay.style, {
+    position: "fixed",
+    inset: "0",
+    background: "rgba(15, 23, 42, 0.55)",
+    display: "none",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: "9999",
+    padding: "16px"
+  });
+
+  editBox = document.createElement("div");
+  Object.assign(editBox.style, {
+    background: "#ffffff",
+    maxWidth: "440px",
+    width: "100%",
+    borderRadius: "16px",
+    padding: "18px 18px 16px",
+    boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+    textAlign: "left"
+  });
+
+  const title = document.createElement("h2");
+  title.textContent = "Edit Task";
+  Object.assign(title.style, {
+    margin: "0 0 12px 0",
+    fontSize: "1.05rem",
+    color: "#111827"
+  });
+
+  const form = document.createElement("div");
+  form.style.display = "grid";
+  form.style.gap = "10px";
+
+  // Name
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "Task name";
+  nameLabel.style.fontSize = "0.85rem";
+  nameLabel.style.color = "#374151";
+
+  editNameInput = document.createElement("input");
+  editNameInput.type = "text";
+  Object.assign(editNameInput.style, {
+    width: "100%",
+    padding: "6px 8px",
+    borderRadius: "8px",
+    border: "1px solid #d1d5db",
+    fontSize: "0.9rem"
+  });
+
+  // Priority
+  const priorityLabel = document.createElement("label");
+  priorityLabel.textContent = "Priority";
+  priorityLabel.style.fontSize = "0.85rem";
+  priorityLabel.style.color = "#374151";
+
+  editPrioritySelect = document.createElement("select");
+  Object.assign(editPrioritySelect.style, {
+    width: "100%",
+    padding: "6px 8px",
+    borderRadius: "8px",
+    border: "1px solid #d1d5db",
+    fontSize: "0.9rem"
+  });
+
+  const priorities = [
+    { value: 1, label: "Low" },
+    { value: 2, label: "Medium" },
+    { value: 3, label: "High" }
+  ];
+  priorities.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = String(p.value);
+    opt.textContent = p.label;
+    editPrioritySelect.appendChild(opt);
+  });
+
+  // Category
+  const categoryLabel = document.createElement("label");
+  categoryLabel.textContent = "Category";
+  categoryLabel.style.fontSize = "0.85rem";
+  categoryLabel.style.color = "#374151";
+
+  editCategoryInput = document.createElement("input");
+  editCategoryInput.type = "text";
+  Object.assign(editCategoryInput.style, {
+    width: "100%",
+    padding: "6px 8px",
+    borderRadius: "8px",
+    border: "1px solid #d1d5db",
+    fontSize: "0.9rem"
+  });
+
+  // Due date
+  const dueLabel = document.createElement("label");
+  dueLabel.textContent = "Due date";
+  dueLabel.style.fontSize = "0.85rem";
+  dueLabel.style.color = "#374151";
+
+  editDueInput = document.createElement("input");
+  editDueInput.type = "date";
+  Object.assign(editDueInput.style, {
+    width: "100%",
+    padding: "6px 8px",
+    borderRadius: "8px",
+    border: "1px solid #d1d5db",
+    fontSize: "0.9rem"
+  });
+
+  form.appendChild(nameLabel);
+  form.appendChild(editNameInput);
+  form.appendChild(priorityLabel);
+  form.appendChild(editPrioritySelect);
+  form.appendChild(categoryLabel);
+  form.appendChild(editCategoryInput);
+  form.appendChild(dueLabel);
+  form.appendChild(editDueInput);
+
+  const btnRow = document.createElement("div");
+  btnRow.style.display = "flex";
+  btnRow.style.justifyContent = "flex-end";
+  btnRow.style.gap = "8px";
+  btnRow.style.marginTop = "14px";
+
+  editCancelBtn = document.createElement("button");
+  editCancelBtn.textContent = "Cancel";
+  Object.assign(editCancelBtn.style, {
+    padding: "6px 12px",
+    borderRadius: "999px",
+    border: "1px solid #d1d5db",
+    background: "#fff",
+    color: "#374151",
+    cursor: "pointer",
+    fontSize: "0.9rem"
+  });
+
+  editSaveBtn = document.createElement("button");
+  editSaveBtn.textContent = "Save";
+  Object.assign(editSaveBtn.style, {
+    padding: "6px 16px",
+    borderRadius: "999px",
+    border: "none",
+    background: "linear-gradient(90deg,#2563eb,#1d4ed8)",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    fontWeight: "600"
+  });
+
+  btnRow.appendChild(editCancelBtn);
+  btnRow.appendChild(editSaveBtn);
+
+  editBox.appendChild(title);
+  editBox.appendChild(form);
+  editBox.appendChild(btnRow);
+  editOverlay.appendChild(editBox);
+  document.body.appendChild(editOverlay);
+
+  // overlay click = cancel if clicking outside box
+  editOverlay.addEventListener("click", (e) => {
+    if (e.target === editOverlay) {
+      handleEditCancel();
+    }
+  });
+
+  editCancelBtn.addEventListener("click", handleEditCancel);
+  editSaveBtn.addEventListener("click", handleEditSave);
+}
+
+/**
+ * Open the Edit Task dialog for a specific task.
+ */
+function openEditDialog(task) {
+  initEditDialog();
+
+  currentEditTaskId = task.id;
+
+  // Prefill fields
+  editNameInput.value = task.name || "";
+  editPrioritySelect.value = String(task.priority || 1);
+  editCategoryInput.value = task.category && task.category !== "general"
+    ? task.category
+    : "";
+
+  if (task.due_date) {
+    const d = new Date(task.due_date);
+    // YYYY-MM-DD for <input type="date">
+    editDueInput.value = d.toISOString().slice(0, 10);
+  } else {
+    editDueInput.value = "";
+  }
+
+  editOverlay.style.display = "flex";
+}
+
+/**
+ * Close the Edit Task dialog without saving.
+ */
+function handleEditCancel() {
+  currentEditTaskId = null;
+  if (editOverlay) {
+    editOverlay.style.display = "none";
+  }
+}
+
+/**
+ * Save edits to the current task and call /update.
+ */
+async function handleEditSave() {
+  if (!currentEditTaskId) {
+    handleEditCancel();
+    return;
+  }
+
+  const name = editNameInput.value.trim();
+  const priority = editPrioritySelect.value;
+  const category = editCategoryInput.value.trim();
+  const dueDate = editDueInput.value; // empty string or "YYYY-MM-DD"
+
+  if (!name) {
+    alert("Task name cannot be empty.");
+    return;
+  }
+
+  const payload = {
+    id: currentEditTaskId,
+    name,
+    priority: parseInt(priority, 10) || 1,
+    category: category || "general",
+    due_date: dueDate || null
+  };
+
+  const result = await sendCommandJson("/update", payload);
+  if (result) {
+    handleEditCancel();
+  }
+}
+
+/* -----------------------
    TASK RENDERING
 ------------------------ */
 
@@ -502,6 +760,8 @@ async function refreshTasks() {
     tasks.forEach((t) => {
       const div = document.createElement("div");
       div.className = "task";
+      // So the pencil can be positioned in the top-right corner
+      div.style.position = "relative";
       div.dataset.id = t.id;
 
       let formattedDate = "";
@@ -515,6 +775,9 @@ async function refreshTasks() {
       }
 
       div.innerHTML = `
+        <!-- Top-right edit pencil -->
+        <button class="task-edit" title="Edit task">✎</button>
+
         <div class="task-header">
           <input type="checkbox" ${t.done ? "checked" : ""}>
           <span class="task-title ${t.done ? "task-title-done" : ""}">
@@ -547,6 +810,32 @@ async function refreshTasks() {
       const deleteBtn = div.querySelector(".task-delete");
       deleteBtn.addEventListener("click", () => deleteTask(t.id));
 
+      const editBtn = div.querySelector(".task-edit");
+      // Style the pencil: top-right, grey, no background
+      Object.assign(editBtn.style, {
+        position: "absolute",
+        top: "6px",
+        right: "6px",
+        background: "transparent",
+        border: "none",
+        padding: "2px 4px",
+        color: "#9ca3af",         // grey
+        cursor: "pointer",
+        fontSize: "0.9rem",
+        lineHeight: "1",
+        zIndex: "10",
+        transform: "scaleX(-1)" 
+      });
+
+      editBtn.addEventListener("mouseenter", () => {
+        editBtn.style.color = "#4b5563"; // darker grey on hover
+      });
+      editBtn.addEventListener("mouseleave", () => {
+        editBtn.style.color = "#9ca3af";
+      });
+
+      editBtn.addEventListener("click", () => openEditDialog(t));
+
       attachLongPressDelete(div, t.id);
 
       taskList.appendChild(div);
@@ -556,6 +845,7 @@ async function refreshTasks() {
     console.error("Error refreshing tasks:", err);
   }
 }
+
 
 /* -----------------------
    API HELPER

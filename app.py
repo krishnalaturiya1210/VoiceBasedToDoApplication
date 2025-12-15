@@ -255,6 +255,66 @@ def delete_task():
     return jsonify({"message": f"Deleted {t.name}"})
 
 
+@app.route("/update", methods=["POST"])
+def update_task():
+    """
+    Update a task by ID (name, priority, category, due_date).
+    Called from the Edit Task dialog in the UI.
+    """
+    data = request.get_json() or {}
+    task_id = data.get("id")
+    if not task_id:
+        return jsonify({"error": "No task id provided"}), 400
+
+    t = Task.query.get(task_id)
+    if not t:
+        return jsonify({"error": "Task not found"}), 404
+
+    # Name (required)
+    new_name = (data.get("name") or "").strip()
+    if not new_name:
+        return jsonify({"error": "Task name cannot be empty"}), 400
+
+    # Prevent duplicate names (case-insensitive, excluding this task)
+    existing = (
+        Task.query
+        .filter(Task.id != task_id)
+        .filter(Task.name.ilike(new_name))
+        .first()
+    )
+    if existing:
+        return jsonify({"error": "Another task with that name already exists"}), 409
+
+    t.name = new_name
+
+    # Priority (1, 2, 3) – fall back to current if invalid
+    priority = data.get("priority")
+    try:
+        p_int = int(priority)
+        if p_int < 1 or p_int > 3:
+            raise ValueError
+    except Exception:
+        p_int = t.priority or 1
+    t.priority = p_int
+
+    # Category (default "general" if empty)
+    category = (data.get("category") or "").strip()
+    t.category = category if category else "general"
+
+    # Due date: expect "YYYY-MM-DD" or empty / null
+    due_str = (data.get("due_date") or "").strip()
+    if due_str:
+        try:
+            t.due_date = datetime.strptime(due_str, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Invalid due date format"}), 400
+    else:
+        t.due_date = None
+
+    db.session.commit()
+    return jsonify({"message": f"Task '{t.name}' updated", "task": t.to_dict()})
+
+
 @app.route("/clear-completed", methods=["POST"])
 def clear_completed():
     """
